@@ -37,13 +37,13 @@ pipeline {
 
         stage('OWASP ZAP DAST Scan') {
             steps {
-                sh '''
-                docker run --network="host" \
-                owasp/zap2docker-stable \
+                sh """
+                docker run --network=host \
+                ghcr.io/zaproxy/zaproxy:stable \
                 zap-baseline.py \
                 -t http://localhost:9090 \
                 -r zap-report.html
-                '''
+                """
             }
         }
 
