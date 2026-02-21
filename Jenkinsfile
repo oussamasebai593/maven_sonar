@@ -1,6 +1,11 @@
 pipeline {
     agent any
 
+    environment {
+        HOST_PORT = "9090"       // Port على السيرفر
+        CONTAINER_PORT = "8080"  // Port التطبيق داخليًا داخل Docker
+    }
+
     stages {
 
         stage('Build & SonarQube') {
@@ -29,12 +34,16 @@ pipeline {
             }
         }
 
-         stage('Run App Container') {
+        stage('Run App Container') {
             steps {
-                sh '''
+                sh """
+                # Remove old container if exists
                 docker rm -f devops-app-container || true
-                docker run -d -p ${APP_PORT}:${APP_PORT} --name devops-app-container devops-app:latest
-                '''
+
+                # Run new container
+                docker run -d -p ${HOST_PORT}:${CONTAINER_PORT} \
+                    --name devops-app-container devops-app:latest
+                """
             }
         }
 
@@ -42,19 +51,20 @@ pipeline {
             steps {
                 sh """
                 docker run --network=host \
-                ghcr.io/zaproxy/zaproxy:stable \
-                zap-baseline.py \
-                -t http://localhost:${APP_PORT} \
-                -r zap-report.html
+                    ghcr.io/zaproxy/zaproxy:stable \
+                    zap-baseline.py \
+                    -t http://localhost:${HOST_PORT} \
+                    -r zap-report.html
                 """
             }
         }
+    }
 
-        stage('Stop Container') {
-            steps {
-                sh 'docker stop devops-app-container || true'
-                sh 'docker rm devops-app-container || true'
-            }
+    post {
+        always {
+            echo "Cleaning up container..."
+            sh 'docker stop devops-app-container || true'
+            sh 'docker rm devops-app-container || true'
         }
     }
 }
