@@ -2,28 +2,17 @@ pipeline {
     agent any
 
     environment {
-        HOST_PORT = "9090"       // Port على السيرفر
-        CONTAINER_PORT = "8080"  // Port التطبيق داخل Docker
+        HOST_PORT = "9090"       // البورت الذي سيعمل عليه التطبيق على السيرفر
+        CONTAINER_PORT = "8080"  // البورت الداخلي داخل الـ Docker container
     }
 
     stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
 
         stage('Build & SonarQube') {
             steps {
                 withSonarQubeEnv('sonarqube_test_server') {
                     sh 'mvn clean package sonar:sonar'
                 }
-            }
-        }
-
-        stage('Dependency Check') {
-            steps {
-                dependencyCheck additionalArguments: '', odcInstallation: 'DP'
             }
         }
 
@@ -39,33 +28,43 @@ pipeline {
             }
         }
 
+        stage('Trivy Image Scan') {
+            steps {
+                sh 'trivy image --exit-code 1 --severity CRITICAL,HIGH devops-app:latest'
+            }
+        }
+
         stage('Run App Container') {
             steps {
                 sh """
-                    # إزالة أي container قديم
-                    docker rm -f devops-app-container || true
+                # إزالة أي نسخة قديمة
+                docker rm -f devops-app-container || true
 
-                    # تشغيل container جديد
-                    docker run -d --name devops-app-container -p ${HOST_PORT}:${CONTAINER_PORT} devops-app:latest
-                """
-
-                // التأكد أن التطبيق جاهز قبل ZAP
-                sh """
-                    for i in {1..15}; do
-                        curl -s http://localhost:${HOST_PORT} && break || sleep 2
-                    done
+                # تشغيل التطبيق
+                docker run -d -p ${HOST_PORT}:${CONTAINER_PORT} \
+                    --name devops-app-container devops-app:latest
                 """
             }
         }
 
-        stage('OWASP ZAP Scan') {
+        stage('Dependency Check') {
             steps {
-                // استخدام ZAP Plugin مباشرة
-                zap baseline: true,
-                    failBuildOnHigh: true,
-                    reportFileName: 'zap-report.html',
-                    scanTarget: "http://localhost:${HOST_PORT}",
-                    zapInstallation: 'ZAP_CLI'
+                // اسم أداة Dependency Check التي ثبتتها في Jenkins هو DP
+                dependencyCheck additionalArguments: '', odcInstallation: 'DP', scanSet: '**/*.jar', skipOnError: false
+            }
+        }
+
+        stage('OWASP ZAP DAST Scan') {
+            steps {
+                sh """
+                mkdir -p zap-report
+                docker run -u root --network=host \
+                    -v \$(pwd)/zap-report:/zap/wrk \
+                    ghcr.io/zaproxy/zaproxy:stable \
+                    zap-baseline.py \
+                    -t http://localhost:${HOST_PORT} \
+                    -r /zap/wrk/zap-report.html
+                """
             }
         }
 
@@ -73,16 +72,11 @@ pipeline {
             steps {
                 publishHTML(target: [
                     reportName: 'OWASP ZAP Report',
-                    reportDir: '.',
+                    reportDir: 'zap-report',
                     reportFiles: 'zap-report.html',
-                    keepAll: true
-                ])
-
-                publishHTML(target: [
-                    reportName: 'Dependency Check Report',
-                    reportDir: 'dependency-check-report',
-                    reportFiles: 'dependency-check-report.html',
-                    keepAll: true
+                    keepAll: true,
+                    alwaysLinkToLastBuild: true,
+                    allowMissing: false
                 ])
             }
         }
