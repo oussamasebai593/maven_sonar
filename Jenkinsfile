@@ -6,14 +6,13 @@ pipeline {
         CONTAINER_PORT = "8080"     // Port التطبيق داخليًا داخل Docker
         APP_NAME = "devops-app-container"
         IMAGE_NAME = "devops-app:latest"
-        ZAP_REPORT_DIR = "DP"
+        ZAP_REPORT_DIR = "zap-report"
     }
 
     stages {
 
         stage('Checkout Code') {
             steps {
-                // Clone project from GitHub (Jenkins already linked to GitHub)
                 checkout scm
             }
         }
@@ -23,6 +22,12 @@ pipeline {
                 withSonarQubeEnv('sonarqube_test_server') {
                     sh 'mvn clean package sonar:sonar'
                 }
+            }
+        }
+
+        stage('Dependency Check') {
+            steps {
+                dependencyCheck additionalArguments: '', odcInstallation: 'DP'
             }
         }
 
@@ -47,10 +52,7 @@ pipeline {
         stage('Run App Container') {
             steps {
                 sh """
-                # Remove old container if exists
                 docker rm -f ${APP_NAME} || true
-
-                # Run new container
                 docker run -d --name ${APP_NAME} -p ${HOST_PORT}:${CONTAINER_PORT} ${IMAGE_NAME}
 
                 # Wait until the app is ready
@@ -67,10 +69,8 @@ pipeline {
         stage('OWASP ZAP DAST Scan') {
             steps {
                 sh """
-                # Ensure report folder exists
                 mkdir -p ${ZAP_REPORT_DIR}
 
-                # Run ZAP baseline scan as root to avoid permission issues
                 docker run --network=host -u root \
                     -v \$(pwd)/${ZAP_REPORT_DIR}:/zap/wrk \
                     ghcr.io/zaproxy/zaproxy:stable \
