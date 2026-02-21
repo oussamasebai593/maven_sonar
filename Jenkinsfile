@@ -11,6 +11,13 @@ pipeline {
 
     stages {
 
+        stage('Checkout Code') {
+            steps {
+                // Clone project from GitHub (Jenkins already linked to GitHub)
+                checkout scm
+            }
+        }
+
         stage('Build & SonarQube') {
             steps {
                 withSonarQubeEnv('sonarqube_test_server') {
@@ -63,7 +70,7 @@ pipeline {
                 # Ensure report folder exists
                 mkdir -p ${ZAP_REPORT_DIR}
 
-                # Run ZAP baseline scan
+                # Run ZAP baseline scan as root to avoid permission issues
                 docker run --network=host -u root \
                     -v \$(pwd)/${ZAP_REPORT_DIR}:/zap/wrk \
                     ghcr.io/zaproxy/zaproxy:stable \
@@ -91,7 +98,7 @@ pipeline {
 
     post {
         always {
-            echo "Cleaning up container..."
+            echo "Cleaning up Docker container..."
             sh "docker stop ${APP_NAME} || true"
             sh "docker rm ${APP_NAME} || true"
         }
