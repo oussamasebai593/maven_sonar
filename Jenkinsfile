@@ -2,17 +2,32 @@ pipeline {
     agent any
 
     environment {
-        HOST_PORT = "9090"
-        CONTAINER_PORT = "8080"
+        HOST_PORT = "9090"          // Port على السيرفر (host)
+        CONTAINER_PORT = "8080"     // Port التطبيق داخليًا داخل Docker
+        APP_NAME = "devops-app-container"
+        IMAGE_NAME = "devops-app:latest"
+        ZAP_REPORT_DIR = "zap-report"
     }
 
     stages {
+
+        stage('Checkout Code') {
+            steps {
+                checkout scm
+            }
+        }
 
         stage('Build & SonarQube') {
             steps {
                 withSonarQubeEnv('sonarqube_test_server') {
                     sh 'mvn clean package sonar:sonar'
                 }
+            }
+        }
+
+        stage('Dependency Check') {
+            steps {
+                dependencyCheck additionalArguments: '', odcInstallation: 'DP'
             }
         }
 
@@ -24,39 +39,40 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t devops-app:latest .'
+                sh "docker build -t ${IMAGE_NAME} ."
             }
         }
 
         stage('Trivy Image Scan') {
             steps {
-                sh 'trivy image --exit-code 1 --severity CRITICAL,HIGH devops-app:latest'
+                sh "trivy image --exit-code 1 --severity CRITICAL,HIGH ${IMAGE_NAME}"
             }
         }
 
         stage('Run App Container') {
             steps {
                 sh """
-                docker rm -f devops-app-container || true
-                docker run -d -p ${HOST_PORT}:${CONTAINER_PORT} \
-                    --name devops-app-container devops-app:latest
-                """
-            }
-        }
+                docker rm -f ${APP_NAME} || true
+                docker run -d --name ${APP_NAME} -p ${HOST_PORT}:${CONTAINER_PORT} ${IMAGE_NAME}
 
-        stage('Dependency Check') {
-            steps {
-                // النسخة الصحيحة للـ plugin
-                dependencyCheckPublisher pattern: '**/*.jar', odcInstallation: 'DP'
+                # Wait until the app is ready
+                echo "Waiting for application to start on port ${HOST_PORT}..."
+                for i in {1..30}; do
+                    nc -z localhost ${HOST_PORT} && break
+                    echo "Waiting 1s..."
+                    sleep 1
+                done
+                """
             }
         }
 
         stage('OWASP ZAP DAST Scan') {
             steps {
                 sh """
-                mkdir -p zap-report
-                docker run -u root --network=host \
-                    -v \$(pwd)/zap-report:/zap/wrk \
+                mkdir -p ${ZAP_REPORT_DIR}
+
+                docker run --network=host -u root \
+                    -v \$(pwd)/${ZAP_REPORT_DIR}:/zap/wrk \
                     ghcr.io/zaproxy/zaproxy:stable \
                     zap-baseline.py \
                     -t http://localhost:${HOST_PORT} \
@@ -65,11 +81,11 @@ pipeline {
             }
         }
 
-        stage('Publish Reports') {
+        stage('Publish ZAP Report') {
             steps {
                 publishHTML(target: [
                     reportName: 'OWASP ZAP Report',
-                    reportDir: 'zap-report',
+                    reportDir: "${ZAP_REPORT_DIR}",
                     reportFiles: 'zap-report.html',
                     keepAll: true,
                     alwaysLinkToLastBuild: true,
@@ -77,13 +93,14 @@ pipeline {
                 ])
             }
         }
+
     }
 
     post {
         always {
-            echo "Cleaning up container..."
-            sh 'docker stop devops-app-container || true'
-            sh 'docker rm devops-app-container || true'
+            echo "Cleaning up Docker container..."
+            sh "docker stop ${APP_NAME} || true"
+            sh "docker rm ${APP_NAME} || true"
         }
     }
 }
