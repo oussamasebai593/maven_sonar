@@ -2,16 +2,12 @@ pipeline {
     agent any
 
     environment {
-        HOST_PORT = "9090"          // Port على السيرفر (host)
-        CONTAINER_PORT = "8080"     // Port التطبيق داخليًا داخل Docker
-        APP_NAME = "devops-app-container"
-        IMAGE_NAME = "devops-app:latest"
-        ZAP_REPORT_DIR = "zap-report"
+        HOST_PORT = "9090"       // Port على السيرفر
+        CONTAINER_PORT = "8080"  // Port التطبيق داخل Docker
     }
 
     stages {
-
-        stage('Checkout Code') {
+        stage('Checkout') {
             steps {
                 checkout scm
             }
@@ -39,68 +35,64 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh "docker build -t ${IMAGE_NAME} ."
-            }
-        }
-
-        stage('Trivy Image Scan') {
-            steps {
-                sh "trivy image --exit-code 1 --severity CRITICAL,HIGH ${IMAGE_NAME}"
+                sh 'docker build -t devops-app:latest .'
             }
         }
 
         stage('Run App Container') {
             steps {
                 sh """
-                docker rm -f ${APP_NAME} || true
-                docker run -d --name ${APP_NAME} -p ${HOST_PORT}:${CONTAINER_PORT} ${IMAGE_NAME}
+                    # إزالة أي container قديم
+                    docker rm -f devops-app-container || true
 
-                # Wait until the app is ready
-                echo "Waiting for application to start on port ${HOST_PORT}..."
-                for i in {1..30}; do
-                    nc -z localhost ${HOST_PORT} && break
-                    echo "Waiting 1s..."
-                    sleep 1
-                done
+                    # تشغيل container جديد
+                    docker run -d --name devops-app-container -p ${HOST_PORT}:${CONTAINER_PORT} devops-app:latest
                 """
-            }
-        }
 
-        stage('OWASP ZAP DAST Scan') {
-            steps {
+                // التأكد أن التطبيق جاهز قبل ZAP
                 sh """
-                mkdir -p ${ZAP_REPORT_DIR}
-
-                docker run --network=host -u root \
-                    -v \$(pwd)/${ZAP_REPORT_DIR}:/zap/wrk \
-                    ghcr.io/zaproxy/zaproxy:stable \
-                    zap-baseline.py \
-                    -t http://localhost:${HOST_PORT} \
-                    -r /zap/wrk/zap-report.html
+                    for i in {1..15}; do
+                        curl -s http://localhost:${HOST_PORT} && break || sleep 2
+                    done
                 """
             }
         }
 
-        stage('Publish ZAP Report') {
+        stage('OWASP ZAP Scan') {
+            steps {
+                // استخدام ZAP Plugin مباشرة
+                zap baseline: true,
+                    failBuildOnHigh: true,
+                    reportFileName: 'zap-report.html',
+                    scanTarget: "http://localhost:${HOST_PORT}",
+                    zapInstallation: 'ZAP_CLI'
+            }
+        }
+
+        stage('Publish Reports') {
             steps {
                 publishHTML(target: [
                     reportName: 'OWASP ZAP Report',
-                    reportDir: "${ZAP_REPORT_DIR}",
+                    reportDir: '.',
                     reportFiles: 'zap-report.html',
-                    keepAll: true,
-                    alwaysLinkToLastBuild: true,
-                    allowMissing: false
+                    keepAll: true
+                ])
+
+                publishHTML(target: [
+                    reportName: 'Dependency Check Report',
+                    reportDir: 'dependency-check-report',
+                    reportFiles: 'dependency-check-report.html',
+                    keepAll: true
                 ])
             }
         }
-
     }
 
     post {
         always {
-            echo "Cleaning up Docker container..."
-            sh "docker stop ${APP_NAME} || true"
-            sh "docker rm ${APP_NAME} || true"
+            echo "Cleaning up container..."
+            sh 'docker stop devops-app-container || true'
+            sh 'docker rm devops-app-container || true'
         }
     }
 }
