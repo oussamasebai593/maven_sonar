@@ -6,7 +6,7 @@ pipeline {
         CONTAINER_PORT = "8080"     // Port التطبيق داخليًا داخل Docker
         APP_NAME = "devops-app-container"
         IMAGE_NAME = "devops-app:latest"
-        ZAP_REPORT_DIR = "zap-report"
+        ZAP_REPORT_DIR = "DP"
     }
 
     stages {
