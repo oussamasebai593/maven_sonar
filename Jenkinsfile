@@ -47,7 +47,7 @@ pipeline {
             }
         }
 
-       stage('OWASP ZAP DAST Scan') {
+        stage('OWASP ZAP DAST Scan') {
             steps {
                 sh """
                 docker run --network=host \
@@ -59,14 +59,20 @@ pipeline {
                 """
             }
         }
-        publishHTML(target: [
-            reportName: 'OWASP ZAP Report',
-            reportDir: 'zap-report',
-            reportFiles: 'zap-report.html',
-            keepAll: true,
-            alwaysLinkToLastBuild: true,
-            allowMissing: false
-        ])
+
+        stage('Publish ZAP Report') {
+            steps {
+                publishHTML(target: [
+                    reportName: 'OWASP ZAP Report',
+                    reportDir: 'zap-report',
+                    reportFiles: 'zap-report.html',
+                    keepAll: true,
+                    alwaysLinkToLastBuild: true,
+                    allowMissing: false
+                ])
+            }
+        }
+    }
 
     post {
         always {
