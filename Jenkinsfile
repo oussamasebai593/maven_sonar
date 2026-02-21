@@ -2,9 +2,11 @@ pipeline {
     agent any
 
     environment {
-        HOST_PORT = "9090"
-        CONTAINER_PORT = "8080"
-        DOCKER_NETWORK = "devops-net"
+        HOST_PORT = "9090"       // Port على السيرفر (host)
+        CONTAINER_PORT = "8080"  // Port التطبيق داخليًا داخل Docker
+        APP_NAME = "devops-app-container"
+        IMAGE_NAME = "devops-app:latest"
+        ZAP_REPORT_DIR = "zap-report"
     }
 
     stages {
@@ -25,28 +27,24 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t devops-app:latest .'
+                sh "docker build -t ${IMAGE_NAME} ."
             }
         }
 
         stage('Trivy Image Scan') {
             steps {
-                sh 'trivy image --exit-code 1 --severity CRITICAL,HIGH devops-app:latest'
-            }
-        }
-
-        stage('Create Docker Network') {
-            steps {
-                sh "docker network inspect ${DOCKER_NETWORK} || docker network create ${DOCKER_NETWORK}"
+                sh "trivy image --exit-code 1 --severity CRITICAL,HIGH ${IMAGE_NAME}"
             }
         }
 
         stage('Run App Container') {
             steps {
                 sh """
-                docker rm -f devops-app-container || true
-                docker run -d --name devops-app-container --network ${DOCKER_NETWORK} \
-                    -p ${HOST_PORT}:${CONTAINER_PORT} devops-app:latest
+                # Remove old container if exists
+                docker rm -f ${APP_NAME} || true
+
+                # Run new container mapped to host port
+                docker run -d --name ${APP_NAME} -p ${HOST_PORT}:${CONTAINER_PORT} ${IMAGE_NAME}
                 """
             }
         }
@@ -54,12 +52,15 @@ pipeline {
         stage('OWASP ZAP DAST Scan') {
             steps {
                 sh """
-                mkdir -p zap-report
-                docker run -u root --network ${DOCKER_NETWORK} \
-                    -v \$(pwd)/zap-report:/zap/wrk \
+                # Create report folder if not exists
+                mkdir -p ${ZAP_REPORT_DIR}
+
+                # Run ZAP baseline scan as root to avoid permission issues
+                docker run --network=host -u root \
+                    -v \$(pwd)/${ZAP_REPORT_DIR}:/zap/wrk \
                     ghcr.io/zaproxy/zaproxy:stable \
                     zap-baseline.py \
-                    -t http://devops-app-container:${CONTAINER_PORT} \
+                    -t http://localhost:${HOST_PORT} \
                     -r /zap/wrk/zap-report.html
                 """
             }
@@ -69,7 +70,7 @@ pipeline {
             steps {
                 publishHTML(target: [
                     reportName: 'OWASP ZAP Report',
-                    reportDir: 'zap-report',
+                    reportDir: "${ZAP_REPORT_DIR}",
                     reportFiles: 'zap-report.html',
                     keepAll: true,
                     alwaysLinkToLastBuild: true,
@@ -82,8 +83,8 @@ pipeline {
     post {
         always {
             echo "Cleaning up container..."
-            sh 'docker stop devops-app-container || true'
-            sh 'docker rm devops-app-container || true'
+            sh "docker stop ${APP_NAME} || true"
+            sh "docker rm ${APP_NAME} || true"
         }
     }
 }
