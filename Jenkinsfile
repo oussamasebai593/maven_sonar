@@ -51,29 +51,30 @@ pipeline {
             steps {
                 sh """
                 mkdir -p zap-report
-                chmod 777 zap-report
-                docker run --network=host \
-                -v \$(pwd)/zap-report:/zap/wrk \
-                ghcr.io/zaproxy/zaproxy:stable \
-                zap-baseline.py \
-                -t http://localhost:${HOST_PORT} \
-                -r /zap/wrk/zap-report.html
+                docker run --network=host -u root \
+                    -v \$(pwd)/zap-report:/zap/wrk \
+                    ghcr.io/zaproxy/zaproxy:stable \
+                    zap-baseline.py \
+                    -t http://localhost:${HOST_PORT} \
+                    -r /zap/wrk/zap-report.html
                 """
             }
         }
 
-        stage('OWASP ZAP DAST Scan') {
+        stage('Publish ZAP Report') {
             steps {
-                sh """
-                docker run --network=host -u root \
-                -v \$(pwd)/zap-report:/zap/wrk \
-                ghcr.io/zaproxy/zaproxy:stable \
-                zap-baseline.py \
-                -t http://localhost:${HOST_PORT} \
-                -r /zap/wrk/zap-report.html
-                """
+                publishHTML(target: [
+                    reportName: 'OWASP ZAP Report',
+                    reportDir: 'zap-report',
+                    reportFiles: 'zap-report.html',
+                    keepAll: true,
+                    alwaysLinkToLastBuild: true,
+                    allowMissing: false
+                ])
             }
         }
+
+    }
 
     post {
         always {
