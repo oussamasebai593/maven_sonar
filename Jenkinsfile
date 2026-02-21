@@ -50,6 +50,8 @@ pipeline {
         stage('OWASP ZAP DAST Scan') {
             steps {
                 sh """
+                mkdir -p zap-report
+                chmod 777 zap-report
                 docker run --network=host \
                 -v \$(pwd)/zap-report:/zap/wrk \
                 ghcr.io/zaproxy/zaproxy:stable \
