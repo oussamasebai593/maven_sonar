@@ -31,7 +31,7 @@ pipeline {
 
         stage('Run App Container') {
             steps {
-                sh 'docker run -d -p 8080:8080 --name devops-app-container devops-app:latest'
+                sh 'docker run -d -p 9090:9090 --name devops-app-container devops-app:latest'
             }
         }
 
@@ -41,7 +41,7 @@ pipeline {
                 docker run --network="host" \
                 owasp/zap2docker-stable \
                 zap-baseline.py \
-                -t http://localhost:8080 \
+                -t http://localhost:9090 \
                 -r zap-report.html
                 '''
             }
