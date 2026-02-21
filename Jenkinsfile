@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        HOST_PORT = "9090"       // البورت الذي سيعمل عليه التطبيق على السيرفر
-        CONTAINER_PORT = "8080"  // البورت الداخلي داخل الـ Docker container
+        HOST_PORT = "9090"
+        CONTAINER_PORT = "8080"
     }
 
     stages {
@@ -37,10 +37,7 @@ pipeline {
         stage('Run App Container') {
             steps {
                 sh """
-                # إزالة أي نسخة قديمة
                 docker rm -f devops-app-container || true
-
-                # تشغيل التطبيق
                 docker run -d -p ${HOST_PORT}:${CONTAINER_PORT} \
                     --name devops-app-container devops-app:latest
                 """
@@ -49,8 +46,8 @@ pipeline {
 
         stage('Dependency Check') {
             steps {
-                // اسم أداة Dependency Check التي ثبتتها في Jenkins هو DP
-                dependencyCheck additionalArguments: '', odcInstallation: 'DP', scanSet: '**/*.jar', skipOnError: false
+                // النسخة الصحيحة للـ plugin
+                dependencyCheckPublisher pattern: '**/*.jar', odcInstallation: 'DP'
             }
         }
 
