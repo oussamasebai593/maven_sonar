@@ -28,5 +28,30 @@ pipeline {
                 sh 'trivy image --exit-code 1 --severity CRITICAL,HIGH devops-app:latest'
             }
         }
+
+        stage('Run App Container') {
+            steps {
+                sh 'docker run -d -p 8080:8080 --name devops-app-container devops-app:latest'
+            }
+        }
+
+        stage('OWASP ZAP DAST Scan') {
+            steps {
+                sh '''
+                docker run --network="host" \
+                owasp/zap2docker-stable \
+                zap-baseline.py \
+                -t http://localhost:8080 \
+                -r zap-report.html
+                '''
+            }
+        }
+
+        stage('Stop Container') {
+            steps {
+                sh 'docker stop devops-app-container'
+                sh 'docker rm devops-app-container'
+            }
+        }
     }
 }
