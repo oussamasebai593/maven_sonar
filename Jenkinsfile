@@ -2,8 +2,9 @@ pipeline {
     agent any
 
     environment {
-        HOST_PORT = "9090"       // Port على السيرفر
-        CONTAINER_PORT = "8080"  // Port التطبيق داخليًا داخل Docker
+        HOST_PORT = "9090"
+        CONTAINER_PORT = "8080"
+        DOCKER_NETWORK = "devops-net"
     }
 
     stages {
@@ -34,15 +35,18 @@ pipeline {
             }
         }
 
+        stage('Create Docker Network') {
+            steps {
+                sh "docker network inspect ${DOCKER_NETWORK} || docker network create ${DOCKER_NETWORK}"
+            }
+        }
+
         stage('Run App Container') {
             steps {
                 sh """
-                # Remove old container if exists
                 docker rm -f devops-app-container || true
-
-                # Run new container
-                docker run -d -p ${HOST_PORT}:${CONTAINER_PORT} \
-                    --name devops-app-container devops-app:latest
+                docker run -d --name devops-app-container --network ${DOCKER_NETWORK} \
+                    -p ${HOST_PORT}:${CONTAINER_PORT} devops-app:latest
                 """
             }
         }
@@ -51,11 +55,11 @@ pipeline {
             steps {
                 sh """
                 mkdir -p zap-report
-                docker run --network=host -u root \
+                docker run -u root --network ${DOCKER_NETWORK} \
                     -v \$(pwd)/zap-report:/zap/wrk \
                     ghcr.io/zaproxy/zaproxy:stable \
                     zap-baseline.py \
-                    -t http://localhost:${HOST_PORT} \
+                    -t http://devops-app-container:${CONTAINER_PORT} \
                     -r /zap/wrk/zap-report.html
                 """
             }
@@ -73,7 +77,6 @@ pipeline {
                 ])
             }
         }
-
     }
 
     post {
