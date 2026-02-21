@@ -29,9 +29,12 @@ pipeline {
             }
         }
 
-        stage('Run App Container') {
+         stage('Run App Container') {
             steps {
-                sh 'docker run -d -p 9090:9090 --name devops-app-container devops-app:latest'
+                sh '''
+                docker rm -f devops-app-container || true
+                docker run -d -p ${APP_PORT}:${APP_PORT} --name devops-app-container devops-app:latest
+                '''
             }
         }
 
@@ -41,7 +44,7 @@ pipeline {
                 docker run --network=host \
                 ghcr.io/zaproxy/zaproxy:stable \
                 zap-baseline.py \
-                -t http://localhost:9090 \
+                -t http://localhost:${APP_PORT} \
                 -r zap-report.html
                 """
             }
