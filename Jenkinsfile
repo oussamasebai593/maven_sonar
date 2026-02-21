@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        HOST_PORT = "9090"       // Port على السيرفر (host)
-        CONTAINER_PORT = "8080"  // Port التطبيق داخليًا داخل Docker
+        HOST_PORT = "9090"
+        CONTAINER_PORT = "8080"
         APP_NAME = "devops-app-container"
         IMAGE_NAME = "devops-app:latest"
         ZAP_REPORT_DIR = "zap-report"
@@ -40,11 +40,16 @@ pipeline {
         stage('Run App Container') {
             steps {
                 sh """
-                # Remove old container if exists
                 docker rm -f ${APP_NAME} || true
-
-                # Run new container mapped to host port
                 docker run -d --name ${APP_NAME} -p ${HOST_PORT}:${CONTAINER_PORT} ${IMAGE_NAME}
+
+                # Wait until the app is ready on port ${HOST_PORT}
+                echo "Waiting for app to start..."
+                for i in {1..20}; do
+                    nc -z localhost ${HOST_PORT} && break
+                    echo "Waiting 1s..."
+                    sleep 1
+                done
                 """
             }
         }
@@ -52,10 +57,7 @@ pipeline {
         stage('OWASP ZAP DAST Scan') {
             steps {
                 sh """
-                # Create report folder if not exists
                 mkdir -p ${ZAP_REPORT_DIR}
-
-                # Run ZAP baseline scan as root to avoid permission issues
                 docker run --network=host -u root \
                     -v \$(pwd)/${ZAP_REPORT_DIR}:/zap/wrk \
                     ghcr.io/zaproxy/zaproxy:stable \
@@ -78,6 +80,7 @@ pipeline {
                 ])
             }
         }
+
     }
 
     post {
