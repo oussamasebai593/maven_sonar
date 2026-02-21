@@ -49,8 +49,8 @@ pipeline {
 
         stage('Stop Container') {
             steps {
-                sh 'docker stop devops-app-container'
-                sh 'docker rm devops-app-container'
+                sh 'docker stop devops-app-container || true'
+                sh 'docker rm devops-app-container || true'
             }
         }
     }
